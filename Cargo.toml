@@ -1,0 +1,16 @@
+[package]
+name = "jenkins-job-health-exporter"
+version = "0.1.0"
+authors = ["Andrew Yourtchenko <ayourtch@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+minreq = { version = "2.3.0", features = ["https-rustls", "json-using-serde"] }
+clap = "3.0.0-beta.2"
+prometheus_exporter = "*"
+prometheus = "*"
+
