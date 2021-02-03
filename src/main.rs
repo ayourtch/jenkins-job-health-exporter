@@ -47,11 +47,11 @@ fn get_job_builds(host: &str, job: &str) -> Result<AllBuilds, MyError> {
 #[clap(version = "0.1", author = "Andrew Yourtchenko <ayourtch@gmail.com>")]
 struct Opts {
     /// Jenkins hostname to monitor the jobs on
-    #[clap(short, long, default_value = "jenkins.fd.io")]
+    #[clap(short, long)]
     jenkins_host: String,
 
     /// Poll interval - how often to get the job builds status
-    #[clap(short, long, default_value = "600")]
+    #[clap(short, long, default_value = "1800")]
     poll_interval_sec: u64,
 
     /// Bind Prometheus exporter to this address
