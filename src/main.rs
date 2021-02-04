@@ -72,10 +72,10 @@ struct Opts {
     verbose: i32,
 }
 
-fn calc_metrics(data: &AllBuilds, try_total: usize, verbose: i32) -> (usize, usize, usize) {
+fn calc_metrics(data: &AllBuilds, try_total: usize, verbose: i32) -> (usize, usize, usize, usize) {
     let last_n = data.builds.windows(try_total).nth(0);
     if last_n.is_none() {
-        return (0, 0, 0);
+        return (0, 0, 0, 0);
     }
     let last_n = last_n.unwrap();
     if verbose > 4 {
@@ -104,7 +104,17 @@ fn calc_metrics(data: &AllBuilds, try_total: usize, verbose: i32) -> (usize, usi
             }
         })
         .count();
-    return (success_count, failure_count, total_count);
+    let unstable_count = last_n
+        .iter()
+        .filter(|x| {
+            if let Some(res) = &x.result {
+                res == "UNSTABLE"
+            } else {
+                false
+            }
+        })
+        .count();
+    return (success_count, failure_count, unstable_count, total_count);
 }
 
 fn main() {
@@ -146,14 +156,33 @@ fn main() {
     let mut gauges_total: HashMap<String, GenericGauge<AtomicI64>> = HashMap::new();
     let mut gauges_success: HashMap<String, GenericGauge<AtomicI64>> = HashMap::new();
     let mut gauges_failure: HashMap<String, GenericGauge<AtomicI64>> = HashMap::new();
+    let mut gauges_unstable: HashMap<String, GenericGauge<AtomicI64>> = HashMap::new();
     for job in &opts.jobs {
         let metric_name = job.clone().replace("-", "_");
-        let gt = register_int_gauge!(format!("{}_total", &metric_name), "help").unwrap();
-        let gs = register_int_gauge!(format!("{}_success", &metric_name), "help").unwrap();
-        let gf = register_int_gauge!(format!("{}_failure", &metric_name), "help").unwrap();
+        let gt = register_int_gauge!(
+            format!("{}_total", &metric_name),
+            format!("{} last builds total", &job)
+        )
+        .unwrap();
+        let gs = register_int_gauge!(
+            format!("{}_success", &metric_name),
+            format!("{} last builds with SUCCESS", &job)
+        )
+        .unwrap();
+        let gf = register_int_gauge!(
+            format!("{}_failure", &metric_name),
+            format!("{} last builds with FAILURE", &job)
+        )
+        .unwrap();
+        let gu = register_int_gauge!(
+            format!("{}_unstable", &metric_name),
+            format!("{} last builds with UNSTABLE", &job)
+        )
+        .unwrap();
         gauges_total.insert(format!("{}", &job), gt);
         gauges_success.insert(format!("{}", &job), gs);
         gauges_failure.insert(format!("{}", &job), gf);
+        gauges_unstable.insert(format!("{}", &job), gu);
     }
 
     let mut wait_sec: u64 = 0;
@@ -166,16 +195,17 @@ fn main() {
             match response {
                 Err(e) => req_err_counter.inc(),
                 Ok(r) => {
-                    let (success_count, failure_count, total_count) =
+                    let (success_count, failure_count, unstable_count, total_count) =
                         calc_metrics(&r, opts.last_builds, opts.verbose);
                     let gkey = job.clone();
                     println!(
-                        "{}: ok {}/ nok {}/ total {}",
-                        &job, success_count, failure_count, total_count
+                        "{}: ok {}/ nok {}/ unstable {}/ total {}",
+                        &job, success_count, failure_count, unstable_count, total_count
                     );
                     gauges_total[&gkey].set(total_count as i64);
                     gauges_success[&gkey].set(success_count as i64);
                     gauges_failure[&gkey].set(failure_count as i64);
+                    gauges_unstable[&gkey].set(unstable_count as i64);
                 }
             }
         }
