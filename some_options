@@ -1,0 +1,11 @@
+{
+  "jenkins_host": "jenkins.fd.io",
+  "poll_interval_sec": 1800,
+  "bind_to": "127.0.0.1:9186",
+  "last_builds": 10,
+  "jobs": [
+    "vpp-csit-verify-device-master-1n-skx"
+  ],
+  "verbose": 2
+}
+

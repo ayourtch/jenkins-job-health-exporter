@@ -43,11 +43,11 @@ fn get_job_builds(host: &str, job: &str, last_builds: usize) -> Result<AllBuilds
 
 /// This program periodically polls Jenkins jobs that are specified in the parameters,
 /// and exports it for Prometheus
-#[derive(Clap)]
+#[derive(Clap, Serialize, Deserialize)]
 #[clap(version = "0.1", author = "Andrew Yourtchenko <ayourtch@gmail.com>")]
 struct Opts {
     /// Jenkins hostname to monitor the jobs on
-    #[clap(short, long)]
+    #[clap(short, long, default_value = "localhost")]
     jenkins_host: String,
 
     /// Poll interval - how often to get the job builds status
@@ -62,7 +62,9 @@ struct Opts {
     #[clap(short, long, default_value = "10")]
     last_builds: usize,
 
-    /// Jenkins jobs to monitor
+    /// Jenkins jobs to monitor. If a single element and it is a filename that exists, load all
+    /// options from JSON in it. NB: this overrides anything specified on command line.
+    // There's a bit of a history to all that: https://github.com/clap-rs/clap/issues/748
     #[clap(required = true)]
     jobs: Vec<String>,
     /// A level of verbosity, and can be used multiple times
@@ -107,6 +109,18 @@ fn calc_metrics(data: &AllBuilds, try_total: usize, verbose: i32) -> (usize, usi
 
 fn main() {
     let opts: Opts = Opts::parse();
+
+    let opts = if let Ok(data) = std::fs::read_to_string(&opts.jobs[0]) {
+        serde_json::from_str(&data).unwrap()
+    } else {
+        opts
+    };
+
+    if opts.verbose > 4 {
+        let data = serde_json::to_string_pretty(&opts).unwrap();
+        println!("{}", data);
+    }
+
     let exporter = prometheus_exporter::start(opts.bind_to.clone()).unwrap();
     println!(
         "Started Prometheus exporter on {}, monitoring {} jobs on {} with {} seconds poll interval",
