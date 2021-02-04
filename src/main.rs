@@ -70,12 +70,16 @@ struct Opts {
     verbose: i32,
 }
 
-fn calc_metrics(data: &AllBuilds, try_total: usize) -> (usize, usize, usize) {
-    let last_n = data.builds.windows(try_total).last();
+fn calc_metrics(data: &AllBuilds, try_total: usize, verbose: i32) -> (usize, usize, usize) {
+    let last_n = data.builds.windows(try_total).nth(0);
     if last_n.is_none() {
         return (0, 0, 0);
     }
     let last_n = last_n.unwrap();
+    if verbose > 4 {
+        println!("all data: {:#?}", data);
+        println!("last data: {:#?}", &last_n);
+    }
 
     let total_count = last_n.len();
     let success_count = last_n
@@ -149,7 +153,7 @@ fn main() {
                 Err(e) => req_err_counter.inc(),
                 Ok(r) => {
                     let (success_count, failure_count, total_count) =
-                        calc_metrics(&r, opts.last_jobs);
+                        calc_metrics(&r, opts.last_jobs, opts.verbose);
                     let gkey = job.clone();
                     println!(
                         "{}: ok {}/ nok {}/ total {}",
