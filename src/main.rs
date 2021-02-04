@@ -31,13 +31,15 @@ impl From<minreq::Error> for MyError {
     }
 }
 
-fn get_job_builds(host: &str, job: &str, last_builds: usize) -> Result<AllBuilds, MyError> {
+fn get_job_builds(opts: &Opts, job: &str) -> Result<AllBuilds, MyError> {
+    let host = &opts.jenkins_host;
+    let last_builds = opts.last_builds;
     // let url = "https://jenkins.fd.io/job/vpp-verify-master-debian10-x86_64/api/json?tree=builds[number,status,timestamp,id,result]";
     let url = format!(
         "https://{}/job/{}/api/json?tree=builds[number,status,timestamp,id,result,duration]{{,{}}}",
         host, job, last_builds
     );
-    let response = minreq::get(url).send()?;
+    let response = minreq::get(url).with_timeout(opts.req_timeout_sec).send()?;
     let result = response.json::<AllBuilds>()?;
     Ok(result)
 }
@@ -50,6 +52,10 @@ struct Opts {
     /// Jenkins hostname to monitor the jobs on
     #[clap(short, long, default_value = "localhost")]
     jenkins_host: String,
+
+    /// Timeout value for the requests, in seconds
+    #[clap(long, default_value = "30")]
+    req_timeout_sec: u64,
 
     /// Poll interval - how often to get the job builds status
     #[clap(short, long, default_value = "1800")]
@@ -199,7 +205,7 @@ fn main() {
 
         for job in &opts.jobs {
             let now = SystemTime::now();
-            let response = get_job_builds(&opts.jenkins_host, job, opts.last_builds);
+            let response = get_job_builds(&opts, job);
             req_counter.inc();
             match now.elapsed() {
                 Ok(elapsed) => {
