@@ -4,6 +4,7 @@ use prometheus_exporter::prometheus::core::{AtomicI64, GenericGauge};
 use prometheus_exporter::{self, prometheus::register_counter, prometheus::register_int_gauge};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::time::{Duration, SystemTime};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct OneBuild {
@@ -157,6 +158,7 @@ fn main() {
     let mut gauges_success: HashMap<String, GenericGauge<AtomicI64>> = HashMap::new();
     let mut gauges_failure: HashMap<String, GenericGauge<AtomicI64>> = HashMap::new();
     let mut gauges_unstable: HashMap<String, GenericGauge<AtomicI64>> = HashMap::new();
+    let mut gauges_reqtime_ms: HashMap<String, GenericGauge<AtomicI64>> = HashMap::new();
     for job in &opts.jobs {
         let metric_name = job.clone().replace("-", "_");
         let gt = register_int_gauge!(
@@ -179,10 +181,16 @@ fn main() {
             format!("{} last builds with UNSTABLE", &job)
         )
         .unwrap();
+        let grt = register_int_gauge!(
+            format!("{}_reqtime_ms", &metric_name),
+            format!("{} how long the last Jenkins API request took", &job)
+        )
+        .unwrap();
         gauges_total.insert(format!("{}", &job), gt);
         gauges_success.insert(format!("{}", &job), gs);
         gauges_failure.insert(format!("{}", &job), gf);
         gauges_unstable.insert(format!("{}", &job), gu);
+        gauges_reqtime_ms.insert(format!("{}", &job), grt);
     }
 
     let mut wait_sec: u64 = 0;
@@ -190,8 +198,19 @@ fn main() {
         let guard = exporter.wait_duration(std::time::Duration::from_secs(wait_sec));
 
         for job in &opts.jobs {
+            let now = SystemTime::now();
             let response = get_job_builds(&opts.jenkins_host, job, opts.last_builds);
             req_counter.inc();
+            match now.elapsed() {
+                Ok(elapsed) => {
+                    let gkey = job.clone();
+                    gauges_reqtime_ms[&gkey].set(elapsed.as_millis() as i64);
+                }
+                Err(e) => {
+                    // an error occurred!
+                    println!("Error: {:?}", e);
+                }
+            }
             match response {
                 Err(e) => req_err_counter.inc(),
                 Ok(r) => {
