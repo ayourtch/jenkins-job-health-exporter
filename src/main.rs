@@ -30,11 +30,11 @@ impl From<minreq::Error> for MyError {
     }
 }
 
-fn get_job_builds(host: &str, job: &str) -> Result<AllBuilds, MyError> {
+fn get_job_builds(host: &str, job: &str, last_builds: usize) -> Result<AllBuilds, MyError> {
     // let url = "https://jenkins.fd.io/job/vpp-verify-master-debian10-x86_64/api/json?tree=builds[number,status,timestamp,id,result]";
     let url = format!(
-        "https://{}/job/{}/api/json?tree=builds[number,status,timestamp,id,result,duration]",
-        host, job
+        "https://{}/job/{}/api/json?tree=builds[number,status,timestamp,id,result,duration]{{,{}}}",
+        host, job, last_builds
     );
     let response = minreq::get(url).send()?;
     let result = response.json::<AllBuilds>()?;
@@ -58,9 +58,9 @@ struct Opts {
     #[clap(short, long, default_value = "127.0.0.1:9186")]
     bind_to: std::net::SocketAddr,
 
-    /// How many "last" jobs to look at
+    /// How many "last" builds to look at
     #[clap(short, long, default_value = "10")]
-    last_jobs: usize,
+    last_builds: usize,
 
     /// Jenkins jobs to monitor
     #[clap(required = true)]
@@ -147,13 +147,13 @@ fn main() {
         let guard = exporter.wait_duration(std::time::Duration::from_secs(wait_sec));
 
         for job in &opts.jobs {
-            let response = get_job_builds(&opts.jenkins_host, job);
+            let response = get_job_builds(&opts.jenkins_host, job, opts.last_builds);
             req_counter.inc();
             match response {
                 Err(e) => req_err_counter.inc(),
                 Ok(r) => {
                     let (success_count, failure_count, total_count) =
-                        calc_metrics(&r, opts.last_jobs, opts.verbose);
+                        calc_metrics(&r, opts.last_builds, opts.verbose);
                     let gkey = job.clone();
                     println!(
                         "{}: ok {}/ nok {}/ total {}",
