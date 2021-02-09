@@ -47,7 +47,7 @@ fn get_job_builds(opts: &Opts, job: &str) -> Result<AllBuilds, MyError> {
 /// This program periodically polls Jenkins jobs that are specified in the parameters,
 /// and exports it for Prometheus
 #[derive(Clap, Serialize, Deserialize)]
-#[clap(version = "0.1", author = "Andrew Yourtchenko <ayourtch@gmail.com>")]
+#[clap(version = env!("GIT_VERSION"), author = "Andrew Yourtchenko <ayourtch@gmail.com>")]
 struct Opts {
     /// Jenkins hostname to monitor the jobs on
     #[clap(short, long, default_value = "localhost")]
