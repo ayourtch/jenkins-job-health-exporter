@@ -128,13 +128,21 @@ fn main() {
     let opts: Opts = Opts::parse();
 
     let opts = if let Ok(data) = std::fs::read_to_string(&opts.jobs[0]) {
-        serde_json::from_str(&data).unwrap()
+        let res = serde_json::from_str(&data);
+        if res.is_ok() {
+            res.unwrap()
+        } else {
+            serde_yaml::from_str(&data).unwrap()
+        }
     } else {
         opts
     };
 
     if opts.verbose > 4 {
         let data = serde_json::to_string_pretty(&opts).unwrap();
+        println!("{}", data);
+        println!("===========");
+        let data = serde_yaml::to_string(&opts).unwrap();
         println!("{}", data);
     }
 

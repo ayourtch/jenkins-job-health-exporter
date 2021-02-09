@@ -1,0 +1,10 @@
+jenkins_host: example.com
+req_timeout_sec: 30
+poll_interval_sec: 1800
+bind_to: "127.0.0.1:9186"
+last_builds: 10
+jobs:
+  - job1
+  - job2
+verbose: 5
+
