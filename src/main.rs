@@ -174,29 +174,28 @@ fn main() {
     let mut gauges_unstable: HashMap<String, GenericGauge<AtomicI64>> = HashMap::new();
     let mut gauges_reqtime_ms: HashMap<String, GenericGauge<AtomicI64>> = HashMap::new();
     for job in &opts.jobs {
-        let metric_name = job.clone().replace("-", "_");
         let gt = register_int_gauge!(
-            format!("{}_total", &metric_name),
+            format!("jenkins_job_total(id=\"{}\")", &job),
             format!("{} last builds total", &job)
         )
         .unwrap();
         let gs = register_int_gauge!(
-            format!("{}_success", &metric_name),
+            format!("jenkins_job_success(id=\"{}\")", &job),
             format!("{} last builds with SUCCESS", &job)
         )
         .unwrap();
         let gf = register_int_gauge!(
-            format!("{}_failure", &metric_name),
+            format!("jenkins_job_failure(id=\"{}\")", &job),
             format!("{} last builds with FAILURE", &job)
         )
         .unwrap();
         let gu = register_int_gauge!(
-            format!("{}_unstable", &metric_name),
+            format!("jenkins_job_unstable(id=\"{}\")", &job),
             format!("{} last builds with UNSTABLE", &job)
         )
         .unwrap();
         let grt = register_int_gauge!(
-            format!("{}_reqtime_ms", &metric_name),
+            format!("jenkins_job_reqtime_ms(id=\"{}\")", &job),
             format!("{} how long the last Jenkins API request took", &job)
         )
         .unwrap();
