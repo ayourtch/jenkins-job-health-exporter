@@ -79,49 +79,90 @@ struct Opts {
     verbose: i32,
 }
 
-fn calc_metrics(data: &AllBuilds, try_total: usize, verbose: i32) -> (usize, usize, usize, usize) {
+fn calc_metrics(
+    data: &Result<AllBuilds, MyError>,
+    try_total: usize,
+    verbose: i32,
+) -> HashMap<String, i64> {
+    let statuses = vec!["success", "failure", "unstable"];
+
+    let mut out = HashMap::new();
+    out.insert("total".into(), 0);
+    for s in &statuses {
+        out.insert(s.to_string(), 0);
+    }
+
+    if data.is_err() {
+        return out;
+    }
+
+    let data = data.as_ref().unwrap();
     let last_n = data.builds.windows(try_total).nth(0);
     if last_n.is_none() {
-        return (0, 0, 0, 0);
+        return out;
     }
+
     let last_n = last_n.unwrap();
     if verbose > 4 {
         println!("all data: {:#?}", data);
         println!("last data: {:#?}", &last_n);
     }
 
-    let total_count = last_n.len();
-    let success_count = last_n
-        .iter()
-        .filter(|x| {
-            if let Some(res) = &x.result {
-                res == "SUCCESS"
-            } else {
-                false
+    out.insert("total".into(), last_n.len() as i64);
+    for st in &statuses {
+        let val = last_n
+            .iter()
+            .filter(|x| {
+                if let Some(res) = &x.result {
+                    res == &st.to_uppercase()
+                } else {
+                    false
+                }
+            })
+            .count();
+        out.insert(st.to_string(), val as i64);
+    }
+    return out;
+}
+
+#[derive(Clone, Debug, Default)]
+struct AllGaugeData {
+    gauges: HashMap<String, HashMap<String, i64>>,
+    req_counter: i64,
+    req_err_counter: i64,
+}
+
+fn get_all_gauge_data(opts: &Opts) -> AllGaugeData {
+    let mut out = AllGaugeData {
+        ..Default::default()
+    };
+    for job in &opts.jobs {
+        let now = SystemTime::now();
+        out.req_counter = out.req_counter + 1;
+        let response = get_job_builds(&opts, job);
+        let elapsed = match now.elapsed() {
+            Ok(elapsed) => elapsed.as_millis() as i64,
+            Err(e) => {
+                // an error occurred!
+                println!("Error: {:?}", e);
+                -1
             }
-        })
-        .count();
-    let failure_count = last_n
-        .iter()
-        .filter(|x| {
-            if let Some(res) = &x.result {
-                res == "FAILURE"
-            } else {
-                false
-            }
-        })
-        .count();
-    let unstable_count = last_n
-        .iter()
-        .filter(|x| {
-            if let Some(res) = &x.result {
-                res == "UNSTABLE"
-            } else {
-                false
-            }
-        })
-        .count();
-    return (success_count, failure_count, unstable_count, total_count);
+        };
+        if response.is_err() {
+            out.req_err_counter = out.req_counter + 1;
+        }
+        let metrics = calc_metrics(&response, opts.last_builds, opts.verbose);
+        println!(
+            "{}: ok {}/ nok {}/ unstable {}/ total {}",
+            &job, &metrics["success"], &metrics["failure"], &metrics["unstable"], &metrics["total"]
+        );
+        out.gauges.insert(job.to_string(), metrics);
+        out.gauges
+            .get_mut(job)
+            .unwrap()
+            .insert("job_reqtime_ms".to_string(), elapsed);
+    }
+    out
 }
 
 fn main() {
@@ -168,79 +209,59 @@ fn main() {
     )
     .unwrap();
 
-    let mut gauges_total: HashMap<String, GenericGauge<AtomicI64>> = HashMap::new();
-    let mut gauges_success: HashMap<String, GenericGauge<AtomicI64>> = HashMap::new();
-    let mut gauges_failure: HashMap<String, GenericGauge<AtomicI64>> = HashMap::new();
-    let mut gauges_unstable: HashMap<String, GenericGauge<AtomicI64>> = HashMap::new();
-    let mut gauges_reqtime_ms: HashMap<String, GenericGauge<AtomicI64>> = HashMap::new();
+    let mut gauges: HashMap<String, HashMap<String, GenericGauge<AtomicI64>>> = HashMap::new();
+    let gauge_info = vec![
+        ("total", "last builds total"),
+        ("success", "last builds with SUCCESS"),
+        ("failure", "last builds with FAILURE"),
+        ("unstable", "last builds with UNSTABLE"),
+        (
+            "job_reqtime_ms",
+            "how long the last Jenkins API request took",
+        ),
+    ];
+
     for job in &opts.jobs {
-        let gt = register_int_gauge!(
-            format!("jenkins_job_total(id=\"{}\")", &job),
-            format!("{} last builds total", &job)
-        )
-        .unwrap();
-        let gs = register_int_gauge!(
-            format!("jenkins_job_success(id=\"{}\")", &job),
-            format!("{} last builds with SUCCESS", &job)
-        )
-        .unwrap();
-        let gf = register_int_gauge!(
-            format!("jenkins_job_failure(id=\"{}\")", &job),
-            format!("{} last builds with FAILURE", &job)
-        )
-        .unwrap();
-        let gu = register_int_gauge!(
-            format!("jenkins_job_unstable(id=\"{}\")", &job),
-            format!("{} last builds with UNSTABLE", &job)
-        )
-        .unwrap();
-        let grt = register_int_gauge!(
-            format!("jenkins_job_reqtime_ms(id=\"{}\")", &job),
-            format!("{} how long the last Jenkins API request took", &job)
-        )
-        .unwrap();
-        gauges_total.insert(format!("{}", &job), gt);
-        gauges_success.insert(format!("{}", &job), gs);
-        gauges_failure.insert(format!("{}", &job), gf);
-        gauges_unstable.insert(format!("{}", &job), gu);
-        gauges_reqtime_ms.insert(format!("{}", &job), grt);
+        for (gauge_name, gauge_help) in &gauge_info {
+            let metric_name = job.clone().replace("-", "_");
+            let new_gauge = register_int_gauge!(
+                format!("{}_{}", &metric_name, gauge_name),
+                format!("{} {}", &job, &gauge_help)
+            )
+            .unwrap();
+            gauges
+                .entry(job.to_string())
+                .or_insert(HashMap::new())
+                .insert(gauge_name.to_string(), new_gauge);
+        }
     }
 
     let mut wait_sec: u64 = 0;
     loop {
         let guard = exporter.wait_duration(std::time::Duration::from_secs(wait_sec));
 
+        let new_data = get_all_gauge_data(&opts);
+        if opts.verbose > 3 {
+            eprintln!("d: {:#?}", &new_data);
+        }
         for job in &opts.jobs {
-            let now = SystemTime::now();
-            let response = get_job_builds(&opts, job);
-            req_counter.inc();
-            match now.elapsed() {
-                Ok(elapsed) => {
-                    let gkey = job.clone();
-                    gauges_reqtime_ms[&gkey].set(elapsed.as_millis() as i64);
+            for (gauge_name, _) in &gauge_info {
+                /*(
+                # we pre-created the hashmaps on the left, and we expect
+                # the same data from hashmaps on the right,
+                # if the data is not there this is a terminal event
+                */
+                if opts.verbose > 4 {
+                    eprintln!("fill job: {} gauge: {}", &job, &gauge_name);
                 }
-                Err(e) => {
-                    // an error occurred!
-                    println!("Error: {:?}", e);
-                }
-            }
-            match response {
-                Err(e) => req_err_counter.inc(),
-                Ok(r) => {
-                    let (success_count, failure_count, unstable_count, total_count) =
-                        calc_metrics(&r, opts.last_builds, opts.verbose);
-                    let gkey = job.clone();
-                    println!(
-                        "{}: ok {}/ nok {}/ unstable {}/ total {}",
-                        &job, success_count, failure_count, unstable_count, total_count
-                    );
-                    gauges_total[&gkey].set(total_count as i64);
-                    gauges_success[&gkey].set(success_count as i64);
-                    gauges_failure[&gkey].set(failure_count as i64);
-                    gauges_unstable[&gkey].set(unstable_count as i64);
-                }
+                let d = new_data.gauges[&job.to_string()][&gauge_name.to_string()];
+
+                gauges[&job.to_string()][&gauge_name.to_string()].set(d);
             }
         }
+        req_err_counter.inc_by(new_data.req_err_counter as f64);
+        req_counter.inc_by(new_data.req_counter as f64);
+
         poll_counter.inc();
         drop(guard);
         wait_sec = opts.poll_interval_sec;
