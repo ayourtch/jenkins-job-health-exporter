@@ -46,7 +46,7 @@ fn get_job_builds(opts: &Opts, job: &str) -> Result<AllBuilds, MyError> {
 
 /// This program periodically polls Jenkins jobs that are specified in the parameters,
 /// and exports it for Prometheus
-#[derive(Clap, Serialize, Deserialize)]
+#[derive(Clone, Clap, Serialize, Deserialize)]
 #[clap(version = env!("GIT_VERSION"), author = "Andrew Yourtchenko <ayourtch@gmail.com>")]
 struct Opts {
     /// Jenkins hostname to monitor the jobs on
@@ -238,12 +238,19 @@ fn main() {
 
     let mut wait_sec: u64 = 0;
     loop {
-        let guard = exporter.wait_duration(std::time::Duration::from_secs(wait_sec));
+        let opts_clone = opts.clone();
+        let handle = std::thread::spawn(move || {
+            let opts = opts_clone;
+            let new_data = get_all_gauge_data(&opts);
+            if opts.verbose > 3 {
+                eprintln!("d: {:#?}", &new_data);
+            }
+            new_data
+        });
 
-        let new_data = get_all_gauge_data(&opts);
-        if opts.verbose > 3 {
-            eprintln!("d: {:#?}", &new_data);
-        }
+        let guard = exporter.wait_duration(std::time::Duration::from_secs(wait_sec));
+        let new_data = handle.join().unwrap();
+
         for job in &opts.jobs {
             for (gauge_name, _) in &gauge_info {
                 /*(

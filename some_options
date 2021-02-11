@@ -1,6 +1,6 @@
 {
   "jenkins_host": "jenkins.fd.io",
-  "poll_interval_sec": 1800,
+  "poll_interval_sec": 60,
   "req_timeout_sec": 30,
   "bind_to": "127.0.0.1:9186",
   "last_builds": 10,
