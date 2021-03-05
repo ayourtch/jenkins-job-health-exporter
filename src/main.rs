@@ -149,7 +149,7 @@ fn get_all_gauge_data(opts: &Opts) -> AllGaugeData {
             }
         };
         if response.is_err() {
-            out.req_err_counter = out.req_counter + 1;
+            out.req_err_counter = out.req_err_counter + 1;
         }
         let metrics = calc_metrics(&response, opts.last_builds, opts.verbose);
         println!(
